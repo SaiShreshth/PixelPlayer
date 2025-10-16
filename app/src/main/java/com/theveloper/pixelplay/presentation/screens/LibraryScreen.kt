@@ -128,6 +128,7 @@ import com.theveloper.pixelplay.presentation.components.AiPlaylistSheet
 import com.theveloper.pixelplay.presentation.components.PlaylistArtCollage
 import com.theveloper.pixelplay.presentation.components.ReorderTabsSheet
 import com.theveloper.pixelplay.presentation.components.SongInfoBottomSheet
+import com.theveloper.pixelplay.presentation.components.SortBottomSheet
 import com.theveloper.pixelplay.presentation.components.subcomps.LibraryActionRow
 import com.theveloper.pixelplay.presentation.components.subcomps.SineWaveLine
 import com.theveloper.pixelplay.presentation.navigation.Screen
@@ -190,11 +191,11 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope() // Mantener si se usa para acciones de UI
 
     var showSongInfoBottomSheet by remember { mutableStateOf(false) }
+    var showSortBottomSheet by remember { mutableStateOf(false) }
     val selectedSongForInfo by playerViewModel.selectedSongForInfo.collectAsState()
     val tabTitles by playerViewModel.libraryTabsFlow.collectAsState()
     val pagerState = rememberPagerState(initialPage = lastTabIndex) { tabTitles.size }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
-    var showSortMenu by remember { mutableStateOf(false) } // Mantener para la visibilidad del menú
     var showReorderTabsSheet by remember { mutableStateOf(false) }
 
     val stableOnMoreOptionsClick: (Song) -> Unit = remember {
@@ -428,15 +429,7 @@ fun LibraryScreen(
                             },
                             iconRotation = iconRotation,
                             showSortButton = availableSortOptions.isNotEmpty(),
-                            onSortIconClick = { showSortMenu = !showSortMenu },
-                            showSortMenu = showSortMenu,
-                            onDismissSortMenu = { showSortMenu = false },
-                            currentSortOptionsForTab = availableSortOptions,
-                            selectedSortOption = currentSelectedSortOption,
-                            onSortOptionSelected = { option ->
-                                onSortOptionChanged(option)
-                                showSortMenu = false // Dismiss menu on selection
-                            },
+                            onSortIconClick = { showSortBottomSheet = true },
                             isPlaylistTab = tabTitles.getOrNull(pagerState.currentPage) == "PLAYLISTS",
                             isFoldersTab = tabTitles.getOrNull(pagerState.currentPage) == "FOLDERS",
                             onGenerateWithAiClick = { playerViewModel.showAiPlaylistSheet() },
@@ -739,6 +732,45 @@ fun LibraryScreen(
                 playerViewModel.resetLibraryTabsOrder()
             },
             onDismiss = { showReorderTabsSheet = false }
+        )
+    }
+
+    val availableSortOptions by playerViewModel.availableSortOptions.collectAsState()
+    val currentSelectedSortOption by remember(playerViewModel, pagerState.currentPage, tabTitles) {
+        playerViewModel.playerUiState.map {
+            when (tabTitles.getOrNull(pagerState.currentPage)) {
+                "SONGS" -> it.currentSongSortOption
+                "ALBUMS" -> it.currentAlbumSortOption
+                "ARTIST" -> it.currentArtistSortOption
+                "LIKED" -> it.currentFavoriteSortOption
+                "FOLDERS" -> it.currentFolderSortOption
+                else -> SortOption.SongTitleAZ
+            }
+        }.distinctUntilChanged()
+    }.collectAsState(initial = SortOption.SongTitleAZ)
+
+    val onSortOptionChanged: (SortOption) -> Unit = remember(playerViewModel, playlistViewModel, pagerState.currentPage, tabTitles) {
+        { option ->
+            when (tabTitles.getOrNull(pagerState.currentPage)) {
+                "SONGS" -> playerViewModel.sortSongs(option)
+                "ALBUMS" -> playerViewModel.sortAlbums(option)
+                "ARTIST" -> playerViewModel.sortArtists(option)
+                "PLAYLISTS" -> playlistViewModel.sortPlaylists(option)
+                "LIKED" -> playerViewModel.sortFavoriteSongs(option)
+                "FOLDERS" -> playerViewModel.sortFolders(option)
+            }
+        }
+    }
+
+    if (showSortBottomSheet) {
+        SortBottomSheet(
+            onDismiss = { showSortBottomSheet = false },
+            options = availableSortOptions,
+            selectedOption = currentSelectedSortOption,
+            onOptionSelected = { option ->
+                onSortOptionChanged(option)
+                showSortBottomSheet = false
+            }
         )
     }
 }
