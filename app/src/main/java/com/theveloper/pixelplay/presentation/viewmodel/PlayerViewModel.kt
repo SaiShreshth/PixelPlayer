@@ -1035,8 +1035,16 @@ class PlayerViewModel @Inject constructor(
             Log.d("PlayerViewModel", "Loading albums in parallel...")
             try {
                 val albumsList = musicRepository.getAllAlbumsOnce()
-                _playerUiState.update { it.copy(albums = albumsList.toImmutableList()) }
-                Log.d("PlayerViewModel", "Albums loaded in parallel. Count: ${albumsList.size}")
+                val initialSort = _playerUiState.value.currentAlbumSortOption
+                val sortedAlbums = when (initialSort) {
+                    SortOption.AlbumTitleAZ -> albumsList.sortedBy { it.title }
+                    SortOption.AlbumTitleZA -> albumsList.sortedByDescending { it.title }
+                    SortOption.AlbumArtist -> albumsList.sortedBy { it.artist }
+                    SortOption.AlbumReleaseYear -> albumsList.sortedByDescending { it.year }
+                    else -> albumsList
+                }.toImmutableList()
+                _playerUiState.update { it.copy(albums = sortedAlbums) }
+                Log.d("PlayerViewModel", "Albums loaded and sorted in parallel. Count: ${albumsList.size}")
             } catch (e: Exception) {
                 Log.e("PlayerViewModel", "Error loading albums in parallel", e)
             }
@@ -1046,8 +1054,14 @@ class PlayerViewModel @Inject constructor(
             Log.d("PlayerViewModel", "Loading artists in parallel...")
             try {
                 val artistsList = musicRepository.getAllArtistsOnce()
-                _playerUiState.update { it.copy(artists = artistsList.toImmutableList()) }
-                Log.d("PlayerViewModel", "Artists loaded in parallel. Count: ${artistsList.size}")
+                val initialSort = _playerUiState.value.currentArtistSortOption
+                val sortedArtists = when (initialSort) {
+                    SortOption.ArtistNameAZ -> artistsList.sortedBy { it.name }
+                    SortOption.ArtistNameZA -> artistsList.sortedByDescending { it.name }
+                    else -> artistsList
+                }.toImmutableList()
+                _playerUiState.update { it.copy(artists = sortedArtists) }
+                Log.d("PlayerViewModel", "Artists loaded and sorted in parallel. Count: ${artistsList.size}")
             } catch (e: Exception) {
                 Log.e("PlayerViewModel", "Error loading artists in parallel", e)
             }
