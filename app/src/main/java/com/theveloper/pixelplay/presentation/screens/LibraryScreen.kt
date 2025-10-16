@@ -393,20 +393,21 @@ fun LibraryScreen(
                             currentTabId?.let { playerViewModel.getAvailableSortOptionsForTab(it) } ?: emptyList()
                         }
 
-                        // Determina la opción de ordenación actualmente seleccionada para la pestaña actual
-                        val selectedSortOption by remember(currentTabId, playerUiState, playlistUiState) {
-                            derivedStateOf {
-                                when (currentTabId) {
-                                    "SONGS" -> playerUiState.currentSongSortOption
-                                    "ALBUMS" -> playerUiState.currentAlbumSortOption
-                                    "ARTIST" -> playerUiState.currentArtistSortOption
-                                    "LIKED" -> playerUiState.currentFavoriteSortOption
-                                    "FOLDERS" -> playerUiState.currentFolderSortOption
-                                    "PLAYLISTS" -> playlistUiState.currentPlaylistSortOption
-                                    else -> SortOption.SongTitleAZ // Fallback
-                                }
+                        val selectedSortOption by combine(
+                            playerViewModel.playerUiState,
+                            playlistViewModel.uiState,
+                            snapshotFlow { pagerState.currentPage }
+                        ) { playerState, playlistState, page ->
+                            when (tabTitles.getOrNull(page)) {
+                                "SONGS" -> playerState.currentSongSortOption
+                                "ALBUMS" -> playerState.currentAlbumSortOption
+                                "ARTIST" -> playerState.currentArtistSortOption
+                                "LIKED" -> playerState.currentFavoriteSortOption
+                                "FOLDERS" -> playerState.currentFolderSortOption
+                                "PLAYLISTS" -> playlistState.currentPlaylistSortOption
+                                else -> SortOption.SongTitleAZ // Fallback
                             }
-                        }
+                        }.collectAsState(initial = SortOption.SongTitleAZ)
 
                         // Callback para cuando se selecciona una nueva opción de ordenación
                         val onSortOptionChanged: (SortOption) -> Unit = remember(currentTabId, playerViewModel, playlistViewModel) {
