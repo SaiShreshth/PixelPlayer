@@ -212,6 +212,7 @@ data class PlayerUiState(
     val currentArtistSortOption: SortOption = SortOption.ArtistNameAZ,
     val currentFavoriteSortOption: SortOption = SortOption.LikedSongDateLiked,
     val currentFolderSortOption: SortOption = SortOption.FolderNameAZ,
+    val isCastConnecting: Boolean = false,
     val searchResults: ImmutableList<SearchResultItem> = persistentListOf(),
     val selectedSearchFilter: SearchFilterType = SearchFilterType.ALL,
     val searchHistory: ImmutableList<SearchHistoryItem> = persistentListOf(),
@@ -1031,15 +1032,27 @@ class PlayerViewModel @Inject constructor(
                 val remoteMediaClient = _castSession.value?.remoteMediaClient ?: return
                 val mediaStatus = remoteMediaClient.mediaStatus ?: return
                 val songMap = _masterAllSongs.value.associateBy { it.id }
-                val newQueue = mediaStatus.queueItems.mapNotNull { item ->
-                    item.customData?.optString("songId")?.let { songId ->
-                        songMap[songId]
-                    }
-                }.toImmutableList()
+
+                // Only update the queue from remote if the local queue is empty.
+                // This prevents truncating the full queue UI with a limited window from Cast.
+                // We rely on the local queue as the source of truth for the list content.
+                if (_playerUiState.value.currentPlaybackQueue.isEmpty()) {
+                    val newQueue = mediaStatus.queueItems.mapNotNull { item ->
+                        item.customData?.optString("songId")?.let { songId ->
+                            songMap[songId]
+                        }
+                    }.toImmutableList()
+                    _playerUiState.update { it.copy(currentPlaybackQueue = newQueue) }
+                }
+
                 val currentItemId = mediaStatus.getCurrentItemId()
                 val currentRemoteItem = mediaStatus.getQueueItemById(currentItemId)
                 val currentSongId = currentRemoteItem?.customData?.optString("songId")
-                val currentSong = currentSongId?.let { songMap[it] }
+
+                // Find current song in the active queue first, fallback to master map
+                val currentSong = _playerUiState.value.currentPlaybackQueue.find { it.id == currentSongId }
+                    ?: currentSongId?.let { songMap[it] }
+
                 if (currentSong?.id != _stablePlayerState.value.currentSong?.id) {
                     viewModelScope.launch {
                         currentSong?.albumArtUriString?.toUri()?.let { uri ->
@@ -1047,9 +1060,7 @@ class PlayerViewModel @Inject constructor(
                         }
                     }
                 }
-                _playerUiState.update {
-                    it.copy(currentPlaybackQueue = newQueue)
-                }
+
                 val isPlaying = mediaStatus.playerState == MediaStatus.PLAYER_STATE_PLAYING
                 lastKnownRemoteIsPlaying = isPlaying
                 val streamPosition = mediaStatus.streamPosition
@@ -1067,12 +1078,14 @@ class PlayerViewModel @Inject constructor(
                 if (mediaStatus.playerState == MediaStatus.PLAYER_STATE_IDLE && mediaStatus.queueItemCount == 0) {
                     listeningStatsTracker.onPlaybackStopped()
                 }
+
                 _stablePlayerState.update {
                     it.copy(
                         isPlaying = isPlaying,
                         isShuffleEnabled = mediaStatus.queueRepeatMode == MediaStatus.REPEAT_MODE_REPEAT_ALL_AND_SHUFFLE,
                         repeatMode = mediaStatus.queueRepeatMode,
-                        currentSong = currentSong,
+                        // Don't clear current song if we are just connecting
+                        currentSong = if (_playerUiState.value.isCastConnecting && currentSong == null) it.currentSong else currentSong,
                         totalDuration = streamDuration
                     )
                 }
@@ -1122,6 +1135,7 @@ class PlayerViewModel @Inject constructor(
                         serverAddress = serverAddress,
                         autoPlay = wasPlaying,
                         onComplete = { success ->
+                            _playerUiState.update { it.copy(isCastConnecting = false) }
                             if (!success) {
                                 sendToast("Failed to load media on cast device.")
                                 disconnect()
@@ -1150,6 +1164,7 @@ class PlayerViewModel @Inject constructor(
             }
 
             private fun stopServerAndTransferBack() {
+                _playerUiState.update { it.copy(isCastConnecting = false) }
                 val session = _castSession.value ?: return
                 val remoteMediaClient = session.remoteMediaClient ?: return
                 val lastKnownStatus = remoteMediaClient.mediaStatus
@@ -1218,8 +1233,12 @@ class PlayerViewModel @Inject constructor(
             }
 
             // Other listener methods can be overridden if needed
-            override fun onSessionStarting(session: CastSession) {}
-            override fun onSessionStartFailed(session: CastSession, error: Int) {}
+            override fun onSessionStarting(session: CastSession) {
+                _playerUiState.update { it.copy(isCastConnecting = true) }
+            }
+            override fun onSessionStartFailed(session: CastSession, error: Int) {
+                _playerUiState.update { it.copy(isCastConnecting = false) }
+            }
             override fun onSessionEnding(session: CastSession) {}
             override fun onSessionResuming(session: CastSession, sessionId: String) {}
             override fun onSessionResumeFailed(session: CastSession, error: Int) {}

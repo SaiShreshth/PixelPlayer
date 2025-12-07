@@ -51,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -157,6 +158,8 @@ fun UnifiedPlayerSheet(
     }.collectAsState(initial = 0L)
     val remotePosition by playerViewModel.remotePosition.collectAsState()
     val isRemotePlaybackActive by playerViewModel.isRemotePlaybackActive.collectAsState()
+    val isCastConnecting by remember { playerViewModel.playerUiState.map { it.isCastConnecting }.distinctUntilChanged() }.collectAsState(initial = false)
+
     val positionToDisplay = if (isRemotePlaybackActive) remotePosition else currentPosition
     val isFavorite by playerViewModel.isCurrentSongFavorite.collectAsState()
 
@@ -215,7 +218,7 @@ fun UnifiedPlayerSheet(
     val miniPlayerAndSpacerHeightPx =
         remember(density, MiniPlayerHeight) { with(density) { MiniPlayerHeight.toPx() } }
 
-    val showPlayerContentArea by remember { derivedStateOf { stablePlayerState.currentSong != null } }
+    val showPlayerContentArea by remember { derivedStateOf { stablePlayerState.currentSong != null || isCastConnecting } }
 
     // Use the granular showDismissUndoBar here
     val isPlayerSlotOccupied by remember(showPlayerContentArea, showDismissUndoBar) {
@@ -1122,6 +1125,7 @@ fun UnifiedPlayerSheet(
                                                     song = currentSongNonNull, // Use non-null version
                                                     cornerRadiusAlb = (overallSheetTopCornerRadius.value * 0.5).dp,
                                                     isPlaying = stablePlayerState.isPlaying, // from top-level stablePlayerState
+                                                    isConnecting = isCastConnecting,
                                                     onPlayPause = { playerViewModel.playPause() },
                                                     onNext = { playerViewModel.nextSong() },
                                                     modifier = Modifier.fillMaxSize()
@@ -1375,6 +1379,7 @@ fun getNavigationBarHeight(): Dp {
 private fun MiniPlayerContentInternal(
     song: Song,
     isPlaying: Boolean,
+    isConnecting: Boolean = false,
     onPlayPause: () -> Unit,
     cornerRadiusAlb: Dp,
     onNext: () -> Unit,
@@ -1437,6 +1442,7 @@ private fun MiniPlayerContentInternal(
                 .clip(CircleShape)
                 .background(LocalMaterialTheme.current.primary)
                 .clickable(
+                    enabled = !isConnecting,
                     interactionSource = interaction,
                     indication = indication
                 ) {
@@ -1445,12 +1451,22 @@ private fun MiniPlayerContentInternal(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                painter = if (isPlaying) painterResource(R.drawable.rounded_pause_24) else painterResource(R.drawable.rounded_play_arrow_24),
-                contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                tint = LocalMaterialTheme.current.onPrimary,
-                modifier = Modifier.size(22.dp)
-            )
+            if (isConnecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = LocalMaterialTheme.current.onPrimary,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    painter = if (isPlaying) painterResource(R.drawable.rounded_pause_24) else painterResource(
+                        R.drawable.rounded_play_arrow_24
+                    ),
+                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                    tint = LocalMaterialTheme.current.onPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(8.dp))
